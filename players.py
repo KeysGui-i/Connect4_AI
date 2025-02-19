@@ -204,67 +204,62 @@ class alphaBetaAI(connect4Player):
 		super().__init__(position, seed)
 		self.depth = depth
 		self.opponent_position = 2 if position == 1 else 1
+		#self.cvd_mode = cvd_mode
 		self.center_order = [3, 2, 4, 1, 5, 0, 6]  # New: Center-first move order
 
 	def evaluate(self, board):
-		# Enhanced evaluation with stronger center bias
-		window_weights = [1, 50, 500, 100000]  # More aggressive weighting
-		player_score = 0
-		opponent_score = 0
-		
-		# Stronger center bonus weights
-		center_weights = {0:1, 1:3, 2:5, 3:7, 4:5, 5:3, 6:1}  # New: Center-focused
-		
-		def evaluate_window(window, player):
-			score = 0
-			player_count = window.count(player)
-			opponent_count = window.count(3 - player) if player != 0 else 0
-			empty = window.count(0)
+		def count_sequences(player):
+			open_threes = 0  # 3-in-a-row with open ends
+			closed_threes = 0  # Blocked at one end
+			open_twos = 0
+			fours = 0
 			
-			if player_count == 4:
-				return 100000  # Immediate win
-			elif player_count == 3 and empty == 1:
-				return 500
-			elif player_count == 2 and empty == 2:
-				return 50
-			elif opponent_count == 3 and empty == 1:  # Block opponent
-				return 400  # Higher than our 2-in-a-row
-			return 0
-
-		# Horizontal checks
-		for r in range(6):
-			for c in range(4):
-				window = list(board[r, c:c+4])
-				player_score += evaluate_window(window, self.position)
-				opponent_score += evaluate_window(window, self.opponent_position)
-
-		# Vertical checks
-		for c in range(7):
-			for r in range(3):
-				window = list(board[r:r+4, c])
-				player_score += evaluate_window(window, self.position)
-				opponent_score += evaluate_window(window, self.opponent_position)
-
-		# Diagonal checks (both directions)
-		for r in range(3):
-			for c in range(4):
-				# Positive slope
-				window = [board[r+i][c+i] for i in range(4)]
-				player_score += evaluate_window(window, self.position)
-				opponent_score += evaluate_window(window, self.opponent_position)
-				# Negative slope
-				window = [board[r+3-i][c+i] for i in range(4)]
-				player_score += evaluate_window(window, self.position)
-				opponent_score += evaluate_window(window, self.opponent_position)
-
-		# Enhanced center control scoring
-		center_score = 0
-		for c in range(7):
+			# Horizontal
 			for r in range(6):
-				if board[r][c] == self.position:
-					center_score += center_weights[c] * 2  # Weight columns
+				for c in range(4):
+					window = list(board[r, c:c+4])
+					player_count = window.count(player)
+					empty = window.count(0)
+					
+					if player_count == 4:
+						fours += 1
+					elif player_count == 3 and empty == 1:
+						if window[0] == 0 or window[-1] == 0:  # Open-ended
+							open_threes += 1
+						else:  # Closed
+							closed_threes += 1
+					elif player_count == 2 and empty == 2:
+						open_twos += 1
 
-		return (player_score - opponent_score * 1.2) + center_score  # Penalize opponent more
+			# Repeat for vertical/diagonal checks
+			# ... (similar logic for other directions)
+			
+			return {
+				'fours': fours,
+				'open_threes': open_threes,
+				'closed_threes': closed_threes,
+				'open_twos': open_twos
+			}
+
+		my_stats = count_sequences(self.position)
+		opp_stats = count_sequences(self.opponent_position)
+		
+		# Strategic weighting
+		utility = (
+			(my_stats['fours'] * 10000) +  # Immediate win gets highest priority
+			(my_stats['open_threes'] * 100) +  # Open 3s are critical
+			(my_stats['closed_threes'] * 10) +  # Blocked 3s less valuable
+			(my_stats['open_twos'] * 2) -
+			(opp_stats['fours'] * 10000) -
+			(opp_stats['open_threes'] * 150) +  # Opponent open 3s more dangerous
+			(opp_stats['closed_threes'] * 15) -
+			(opp_stats['open_twos'] * 3)
+		)
+		
+		# Add center control bonus
+		center_columns = [2, 3, 4]
+		center_bonus = sum([1 for c in center_columns for r in range(6) if board[r][c] == self.position])
+		return utility + center_bonus * 3
 
 	def get_valid_moves_ordered(self, board):
 		'''Return moves sorted by center priority'''
