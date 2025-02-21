@@ -218,19 +218,21 @@ class TranspositionTable:
 		return None
 
 class alphaBetaAI(connect4Player):
-	def __init__(self, position, seed, cvd_mode, depth=5):  # Increased depth
+	def __init__(self, position, seed, depth=4):  # Increased depth
 		super().__init__(position, seed)
 		self.initial_depth = depth
 		self.time_limit = 1.99  # 2s with safety margin
-		self.cvd_mode = cvd_mode
+		#	self.cvd_mode = cvd_mode
 		self.opponent_position = 2 if position == 1 else 1
 		self.center_order = [3, 2, 4, 1, 5, 0, 6]  # Center-first move order
 		self.trans_table = TranspositionTable()
+		self.total_moves = 6 * 7
 	
 	def board_to_key(self, board):
 		# Convert board to hashable key (simple version)
 		return hash(tuple(map(tuple, board)))
 
+	'''
 	def evaluate(self, board):
 		
 		# Precompute next available rows for all columns
@@ -306,7 +308,7 @@ class alphaBetaAI(connect4Player):
 		center_value = sum(board[r][c] == self.position 
 						for c in [2,3,4] for r in range(6))
 		return utility + center_value * 3
-
+'''
 	def get_valid_moves_ordered(self, board, critical_col=None):
 		"""Prioritize critical blocking moves first"""
 		valid = [c for c in self.center_order if board[0][c] == 0]
@@ -328,6 +330,25 @@ class alphaBetaAI(connect4Player):
 			except TimeoutError:
 				break
 		return best_move
+	def check_win(self, board, player):
+		# Horizontal
+		for r in range(6):
+			for c in range(4):
+				if all(board[r][c+i] == player for i in range(4)):
+					return True
+		# Vertical
+		for c in range(7):
+			for r in range(3):
+				if all(board[r+i][c] == player for i in range(4)):
+					return True
+		# Diagonals
+		for r in range(3):
+			for c in range(4):
+				if all(board[r+i][c+i] == player for i in range(4)):
+					return True
+				if all(board[r+3-i][c+i] == player for i in range(4)):
+					return True
+		return False
 
 	def alphabeta(self, board, depth, alpha, beta, maximizing_player):
 		if time.time() - self.start_time > self.time_limit:
@@ -382,7 +403,7 @@ class alphaBetaAI(connect4Player):
 				flag = TranspositionTable.EntryType.EXACT
 			self.trans_table.put(key, max_val, flag, depth)
 			
-			return (best_col, max_val)
+			return (best_col, max_val)  # Fixed variable name here
 		else:
 			min_val = float('inf')
 			for col in valid_moves:
@@ -407,32 +428,25 @@ class alphaBetaAI(connect4Player):
 				flag = TranspositionTable.EntryType.EXACT
 			self.trans_table.put(key, min_val, flag, depth)
 			
-			return (best_col, min_val)
+			return (best_col, min_val)  # Fixed variable name here
 
 	def is_terminal(self, board):
-		# Fast win check using bitwise operations
+		"""Modified C++-style terminal check with exact scores"""
+		# Check win for either player
 		for player in [self.position, self.opponent_position]:
-			# Horizontal
-			for r in range(6):
-				for c in range(4):
-					if all(board[r][c+i] == player for i in range(4)):
-						return (True, 100000 if player == self.position else -100000)
-			# Vertical
-			for c in range(7):
-				for r in range(3):
-					if all(board[r+i][c] == player for i in range(4)):
-						return (True, 100000 if player == self.position else -100000)
-			# Diagonals
-			for r in range(3):
-				for c in range(4):
-					if all(board[r+i][c+i] == player for i in range(4)):
-						return (True, 100000 if player == self.position else -100000)
-					if all(board[r+3-i][c+i] == player for i in range(4)):
-						return (True, 100000 if player == self.position else -100000)
-		# Check tie
-		if all(board[0][c] != 0 for c in range(7)):
+			if self.check_win(board, player):
+				score = (self.total_moves + 1 - self.nb_moves(board)) // 2
+				return (True, score if player == self.position else -score)
+		
+		# Check draw
+		if np.all(board != 0):
 			return (True, 0)
+		
 		return (False, 0)
+
+	def nb_moves(self, board):
+		"""Count played moves (equivalent to C++ P.nbMoves())"""
+		return np.count_nonzero(board)
 	
 	def find_urgent_block(self, board):
 		"""Quick check for immediate opponent threats needing block"""
