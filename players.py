@@ -200,12 +200,13 @@ class alphaBetaAI(connect4Player):
 	'''
 	Optimized alpha-beta AI with center prioritization
 	'''
-	def __init__(self, position, seed, depth=6):  # Increased depth
+	def __init__(self, position, seed, depth=5):  # Increased depth
 		super().__init__(position, seed)
 		self.depth = depth
 		self.opponent_position = 2 if position == 1 else 1
 		#self.cvd_mode = cvd_mode
 		self.center_order = [3, 2, 4, 1, 5, 0, 6]  # New: Center-first move order
+		
 
 	def evaluate(self, board):
 		def count_sequences(player):
@@ -215,7 +216,7 @@ class alphaBetaAI(connect4Player):
 			fours = 0
 			
 			# Horizontal
-			for r in range(6):
+			for r in range(6):	
 				for c in range(4):
 					window = list(board[r, c:c+4])
 					player_count = window.count(player)
@@ -233,7 +234,57 @@ class alphaBetaAI(connect4Player):
 
 			# Repeat for vertical/diagonal checks
 			# ... (similar logic for other directions)
-			
+			# Vertical
+			for c in range(7):  # 7 columns
+				for r in range(3):  # Only need to check the bottom 3 rows for a vertical window of 4
+					window = list(board[r:r+4, c])
+					player_count = window.count(player)
+					empty = window.count(0)
+
+					if player_count == 4:
+						fours += 1
+					elif player_count == 3 and empty == 1:
+						# All vertical threes are open-ended since we're considering vertical alignment
+						open_threes += 1
+					elif player_count == 2 and empty == 2:
+						open_twos += 1
+      
+
+						# Diagonal checks
+			# Positive slope diagonals (bottom left to top right)
+			for r in range(3, 6):  # Start from the third row from the bottom to the top
+				for c in range(4):  # The first four columns
+					window = [board[r-i][c+i] for i in range(4)]
+					player_count = window.count(player)
+					empty = window.count(0)
+
+					if player_count == 4:
+						fours += 1
+					elif player_count == 3 and empty == 1:
+						if window[0] == 0 or window[-1] == 0:
+							open_threes += 1
+						else:
+							closed_threes += 1
+					elif player_count == 2 and empty == 2:
+						open_twos += 1
+				# Negative slope diagonals (top left to bottom right)
+				for r in range(3):  # Start from the top row to the third row from the top
+					for c in range(4):  # The first four columns
+						window = [board[r+i][c+i] for i in range(4)]
+						player_count = window.count(player)
+						empty = window.count(0)
+
+						if player_count == 4:
+							fours += 1
+						elif player_count == 3 and empty == 1:
+							if window[0] == 0 or window[-1] == 0:
+								open_threes += 1
+							else:
+								closed_threes += 1
+						elif player_count == 2 and empty == 2:
+							open_twos += 1
+
+
 			return {
 				'fours': fours,
 				'open_threes': open_threes,
