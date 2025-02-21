@@ -197,7 +197,7 @@ class minimaxAI(connect4Player):
 	
 
 class alphaBetaAI(connect4Player):
-	def __init__(self, position, seed, cvd_mode, depth=6):  # Increased depth
+	def __init__(self, position, seed, cvd_mode, depth=4):  # Increased depth
 		super().__init__(position, seed)
 		self.depth = depth
 		self.cvd_mode = cvd_mode
@@ -216,107 +216,47 @@ class alphaBetaAI(connect4Player):
 			next_available_rows[c] = next_row
 
 		def count_sequences(player):
+			consecutive_open_twos = 0
 			potential_fours = 0
-			open_threes = 0  
-			closed_threes = 0  
-			open_twos = 0
+			open_threes = 0
 			fours = 0
-			
-			# Horizontal
+
+			# Horizontal checks
 			for r in range(6):
+				row = board[r]
 				for c in range(4):
-					cells = [(r, c + i) for i in range(4)]
-					window = [board[row][col] for (row, col) in cells]
-					player_count = window.count(player)
-					empty_count = window.count(0)
-					
-					if player_count == 4:
-						fours += 1
-					elif player_count == 3 and empty_count == 1:
-						# Check for potential four
-						for (row, col) in cells:
-							if board[row][col] == 0 and next_available_rows[col] == row:
-								potential_fours += 1
-								break
-						# Open/closed check
-						if window[0] == 0 or window[-1] == 0:
-							open_threes += 1
-						else:
-							closed_threes += 1
-					elif player_count == 2 and empty_count == 2:
-						open_twos += 1
+					# Check consecutive two patterns
+					if row[c] == row[c+1] == player and row[c+2] == 0 and row[c+3] == 0:
+						consecutive_open_twos += 1
+					# Check for three-with-gap patterns (xx_x)
+					if (row[c] == row[c+1] == row[c+3] == player and row[c+2] == 0) or \
+					(row[c] == row[c+2] == row[c+3] == player and row[c+1] == 0):
+						potential_fours += 1
 
-			# Vertical
+			# Vertical checks
 			for c in range(7):
+				col = board[:,c]
 				for r in range(3):
-					cells = [(r + i, c) for i in range(4)]
-					window = [board[row][col] for (row, col) in cells]
-					player_count = window.count(player)
-					empty_count = window.count(0)
-					
-					if player_count == 4:
-						fours += 1
-					elif player_count == 3 and empty_count == 1:
-						for (row, col) in cells:
-							if board[row][col] == 0 and next_available_rows[col] == row:
-								potential_fours += 1
-								break
-						# Vertical open threes (only possible if top is open)
-						if r == 0 or board[r-1][c] == 0:  # Simplified check
-							open_threes += 1
-					elif player_count == 2 and empty_count == 2:
-						open_twos += 1
+					if col[r] == col[r+1] == player and col[r+2] == 0 and col[r+3] == 0:
+						consecutive_open_twos += 1
 
-			# Positive slope diagonal
-			for r in range(3, 6):
-				for c in range(4):
-					cells = [(r - i, c + i) for i in range(4)]
-					window = [board[row][col] for (row, col) in cells]
-					player_count = window.count(player)
-					empty_count = window.count(0)
-					
-					if player_count == 4:
-						fours += 1
-					elif player_count == 3 and empty_count == 1:
-						for (row, col) in cells:
-							if board[row][col] == 0 and next_available_rows[col] == row:
-								potential_fours += 1
-								break
-						if window[0] == 0 or window[-1] == 0:
-							open_threes += 1
-						else:
-							closed_threes += 1
-					elif player_count == 2 and empty_count == 2:
-						open_twos += 1
-
-			# Negative slope diagonal
+			# Diagonal checks (both directions)
 			for r in range(3):
 				for c in range(4):
-					cells = [(r + i, c + i) for i in range(4)]
-					window = [board[row][col] for (row, col) in cells]
-					player_count = window.count(player)
-					empty_count = window.count(0)
-					
-					if player_count == 4:
-						fours += 1
-					elif player_count == 3 and empty_count == 1:
-						for (row, col) in cells:
-							if board[row][col] == 0 and next_available_rows[col] == row:
-								potential_fours += 1
-								break
-						if window[0] == 0 or window[-1] == 0:
-							open_threes += 1
-						else:
-							closed_threes += 1
-					elif player_count == 2 and empty_count == 2:
-						open_twos += 1
+					# Negative slope
+					if board[r][c] == board[r+1][c+1] == player and board[r+2][c+2] == 0 and board[r+3][c+3] == 0:
+						consecutive_open_twos += 1
+					# Positive slope
+					if board[r+3][c] == board[r+2][c+1] == player and board[r+1][c+2] == 0 and board[r][c+3] == 0:
+						consecutive_open_twos += 1
+			
+			
 
 			return {
-				'fours': fours,
+				'consecutive_open_twos': consecutive_open_twos,
+				'potential_fours': potential_fours,
 				'open_threes': open_threes,
-				'closed_threes': closed_threes,
-				'open_twos': open_twos,
-				'potential_fours': potential_fours
+				'fours': fours
 			}
 
 		my_stats = count_sequences(self.position)
@@ -324,21 +264,20 @@ class alphaBetaAI(connect4Player):
 		
 		# Strategic weighting with threat prioritization
 		utility = (
-			(my_stats['fours'] * 10000) + 
-			(my_stats['potential_fours'] * 5000) +  # High value for immediate win
-			(my_stats['open_threes'] * 150) +       # Increased priority
-			(my_stats['closed_threes'] * 10) +
-			(my_stats['open_twos'] * 2) -
+			(my_stats['fours'] * 10000) +
+			(my_stats['potential_fours'] * 5000) +
+			(my_stats['open_threes'] * 200) +
+			(my_stats['consecutive_open_twos'] * 50) -  # Increased weight
 			(opp_stats['fours'] * 10000) -
-			(opp_stats['potential_fours'] * 5000) -  # Block opponent's immediate win
-			(opp_stats['open_threes'] * 200) +       # More dangerous opponent threats
-			(opp_stats['closed_threes'] * 15) -
-			(opp_stats['open_twos'] * 3))
+			(opp_stats['potential_fours'] * 6000) -     # Higher penalty
+			(opp_stats['open_threes'] * 300) -
+			(opp_stats['consecutive_open_twos'] * 100)  # Heavy penalty for opponent's threats
+		)
 		
-		# Add center control bonus
-		center_columns = [2, 3, 4]
-		center_bonus = sum([1 for c in center_columns for r in range(6) if board[r][c] == self.position])
-		return utility + center_bonus * 3
+		# Add center control
+		center_value = sum(board[r][c] == self.position 
+						for c in [2,3,4] for r in range(6))
+		return utility + center_value * 3
 
 	def get_valid_moves_ordered(self, board):
 		valid = [c for c in self.center_order if board[0][c] == 0]
@@ -404,6 +343,7 @@ class alphaBetaAI(connect4Player):
 		if all(board[0][c] != 0 for c in range(7)):
 			return (True, 0)
 		return (False, 0)
+	
 
 	def play(self, env, move_dict):
 		board = np.array(env.getBoard())
