@@ -4,6 +4,7 @@ import math
 from connect4 import connect4
 import sys
 import numpy as np
+import time
 
 class connect4Player(object):
 	def __init__(self, position, seed=0, CVDMode=False):
@@ -197,14 +198,16 @@ class minimaxAI(connect4Player):
 	
 
 class alphaBetaAI(connect4Player):
-	def __init__(self, position, seed, cvd_mode, depth=4):  # Increased depth
+	def __init__(self, position, seed, cvd_mode, depth=5):  # Increased depth
 		super().__init__(position, seed)
-		self.depth = depth
+		self.initial_depth = depth
+		self.time_limit = 1.99  # 2s with safety margin
 		self.cvd_mode = cvd_mode
 		self.opponent_position = 2 if position == 1 else 1
 		self.center_order = [3, 2, 4, 1, 5, 0, 6]  # Center-first move order
 
 	def evaluate(self, board):
+		
 		# Precompute next available rows for all columns
 		next_available_rows = {}
 		for c in range(7):
@@ -214,7 +217,7 @@ class alphaBetaAI(connect4Player):
 					next_row = r
 					break
 			next_available_rows[c] = next_row
-
+		
 		def count_sequences(player):
 			consecutive_open_twos = 0
 			potential_fours = 0
@@ -279,17 +282,39 @@ class alphaBetaAI(connect4Player):
 						for c in [2,3,4] for r in range(6))
 		return utility + center_value * 3
 
-	def get_valid_moves_ordered(self, board):
+	def get_valid_moves_ordered(self, board, critical_col=None):
+		"""Prioritize critical blocking moves first"""
 		valid = [c for c in self.center_order if board[0][c] == 0]
+		if critical_col is not None and critical_col in valid:
+			valid.remove(critical_col)
+			return [critical_col] + valid
 		return valid
 
+	def iterative_deepening_search(self, board):
+		self.start_time = time.time()
+		best_move = 3  # Default to center
+		depth = 1
+		
+		while depth <= self.initial_depth:
+			try:
+				move, _ = self.alphabeta(board, depth, -float('inf'), float('inf'), True)
+				best_move = move
+				depth += 1
+			except TimeoutError:
+				break
+		return best_move
+
 	def alphabeta(self, board, depth, alpha, beta, maximizing_player):
+		if time.time() - self.start_time > self.time_limit:
+			raise TimeoutError()
+		
 		terminal, value = self.is_terminal(board)
 		if depth == 0 or terminal:
 			return (None, value)
 
-		valid_moves = self.get_valid_moves_ordered(board)
-		best_col = valid_moves[0]
+		# Threat detection for move ordering
+		critical_col = self.find_urgent_block(board)
+		valid_moves = self.get_valid_moves_ordered(board, critical_col)
 
 		if maximizing_player:
 			max_val = -float('inf')
@@ -344,10 +369,26 @@ class alphaBetaAI(connect4Player):
 			return (True, 0)
 		return (False, 0)
 	
-
+	def find_urgent_block(self, board):
+		"""Quick check for immediate opponent threats needing block"""
+		for c in self.center_order:
+			if board[0][c] != 0:
+				continue
+			# Simulate opponent move
+			row = next(r for r in range(5, -1, -1) if board[r][c] == 0)
+			temp_board = np.copy(board)
+			temp_board[row][c] = self.opponent_position
+			if self.is_terminal(temp_board)[0]:
+				return c
+		return None
+    
 	def play(self, env, move_dict):
 		board = np.array(env.getBoard())
-		best_move, _ = self.alphabeta(board, self.depth, -float('inf'), float('inf'), True)
+		try:
+			best_move = self.iterative_deepening_search(board)
+		except TimeoutError:
+			valid = self.get_valid_moves_ordered(board)
+			best_move = valid[0] if valid else 3
 		move_dict['move'] = best_move
 
     # Keep existing is_terminal and play methods
