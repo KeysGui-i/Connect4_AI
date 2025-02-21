@@ -196,6 +196,26 @@ class minimaxAI(connect4Player):
 		best_move, _ = self.minimax(board, self.depth, True)
 		move_dict['move'] = best_move
 	
+class TranspositionTable:
+	class EntryType:
+		EXACT = 0
+		LOWER = 1
+		UPPER = 2
+
+	def __init__(self, size=1048583):  # Use a large prime number
+		self.size = size
+		self.table = [None] * size
+
+	def put(self, key, score, flag, depth):
+		index = key % self.size
+		self.table[index] = (key, score, flag, depth)
+
+	def get(self, key):
+		index = key % self.size
+		entry = self.table[index]
+		if entry and entry[0] == key:
+			return entry
+		return None
 
 class alphaBetaAI(connect4Player):
 	def __init__(self, position, seed, cvd_mode, depth=5):  # Increased depth
@@ -205,6 +225,11 @@ class alphaBetaAI(connect4Player):
 		self.cvd_mode = cvd_mode
 		self.opponent_position = 2 if position == 1 else 1
 		self.center_order = [3, 2, 4, 1, 5, 0, 6]  # Center-first move order
+		self.trans_table = TranspositionTable()
+	
+	def board_to_key(self, board):
+		# Convert board to hashable key (simple version)
+		return hash(tuple(map(tuple, board)))
 
 	def evaluate(self, board):
 		
@@ -308,13 +333,30 @@ class alphaBetaAI(connect4Player):
 		if time.time() - self.start_time > self.time_limit:
 			raise TimeoutError()
 		
+		original_alpha = alpha
+		key = self.board_to_key(board)
+		entry = self.trans_table.get(key)
+
+		if entry:
+			entry_key, entry_score, entry_flag, entry_depth = entry
+			if entry_depth >= depth:
+				if entry_flag == TranspositionTable.EntryType.EXACT:
+					return (None, entry_score)
+				elif entry_flag == TranspositionTable.EntryType.LOWER:
+					alpha = max(alpha, entry_score)
+				elif entry_flag == TranspositionTable.EntryType.UPPER:
+					beta = min(beta, entry_score)
+				
+				if alpha >= beta:
+					return (None, entry_score)
+
 		terminal, value = self.is_terminal(board)
 		if depth == 0 or terminal:
 			return (None, value)
 
-		# Threat detection for move ordering
 		critical_col = self.find_urgent_block(board)
 		valid_moves = self.get_valid_moves_ordered(board, critical_col)
+		best_col = valid_moves[0] if valid_moves else None
 
 		if maximizing_player:
 			max_val = -float('inf')
@@ -323,13 +365,24 @@ class alphaBetaAI(connect4Player):
 				b_copy = np.copy(board)
 				b_copy[row][col] = self.position
 				current_val = self.alphabeta(b_copy, depth-1, alpha, beta, False)[1]
+				
 				if current_val > max_val:
 					max_val = current_val
 					best_col = col
 				alpha = max(alpha, max_val)
 				if alpha >= beta:
 					break
-			return best_col, max_val
+			
+			# Store in transposition table
+			if max_val <= original_alpha:
+				flag = TranspositionTable.EntryType.UPPER
+			elif max_val >= beta:
+				flag = TranspositionTable.EntryType.LOWER
+			else:
+				flag = TranspositionTable.EntryType.EXACT
+			self.trans_table.put(key, max_val, flag, depth)
+			
+			return (best_col, max_val)
 		else:
 			min_val = float('inf')
 			for col in valid_moves:
@@ -337,13 +390,25 @@ class alphaBetaAI(connect4Player):
 				b_copy = np.copy(board)
 				b_copy[row][col] = self.opponent_position
 				current_val = self.alphabeta(b_copy, depth-1, alpha, beta, True)[1]
+				
 				if current_val < min_val:
 					min_val = current_val
 					best_col = col
 				beta = min(beta, min_val)
 				if alpha >= beta:
 					break
-			return best_col, min_val
+			
+			# Store in transposition table
+			if min_val <= original_alpha:
+				flag = TranspositionTable.EntryType.UPPER
+			elif min_val >= beta:
+				flag = TranspositionTable.EntryType.LOWER
+			else:
+				flag = TranspositionTable.EntryType.EXACT
+			self.trans_table.put(key, min_val, flag, depth)
+			
+			return (best_col, min_val)
+
 	def is_terminal(self, board):
 		# Fast win check using bitwise operations
 		for player in [self.position, self.opponent_position]:

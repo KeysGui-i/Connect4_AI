@@ -39,7 +39,7 @@ w = 0
 t = 0 
 l = 0
 
-for competitor, n_trials in zip([randomAI, monteCarloAI], [5, 5]): 
+for competitor, n_trials in zip([monteCarloAI, randomAI], [5, 5]): 
     for i in range(n_trials):
         
         # You play first
