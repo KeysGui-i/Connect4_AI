@@ -197,115 +197,143 @@ class minimaxAI(connect4Player):
 	
 
 class alphaBetaAI(connect4Player):
-	'''
-	Optimized alpha-beta AI with center prioritization
-	'''
-	def __init__(self, position, seed, depth=5):  # Increased depth
+	def __init__(self, position, seed, cvd_mode, depth=6):  # Increased depth
 		super().__init__(position, seed)
 		self.depth = depth
+		self.cvd_mode = cvd_mode
 		self.opponent_position = 2 if position == 1 else 1
-		#self.cvd_mode = cvd_mode
-		self.center_order = [3, 2, 4, 1, 5, 0, 6]  # New: Center-first move order
-		
+		self.center_order = [3, 2, 4, 1, 5, 0, 6]  # Center-first move order
 
 	def evaluate(self, board):
+		# Precompute next available rows for all columns
+		next_available_rows = {}
+		for c in range(7):
+			next_row = -1
+			for r in range(5, -1, -1):
+				if board[r][c] == 0:
+					next_row = r
+					break
+			next_available_rows[c] = next_row
+
 		def count_sequences(player):
-			open_threes = 0  # 3-in-a-row with open ends
-			closed_threes = 0  # Blocked at one end
+			potential_fours = 0
+			open_threes = 0  
+			closed_threes = 0  
 			open_twos = 0
 			fours = 0
 			
 			# Horizontal
-			for r in range(6):	
+			for r in range(6):
 				for c in range(4):
-					window = list(board[r, c:c+4])
+					cells = [(r, c + i) for i in range(4)]
+					window = [board[row][col] for (row, col) in cells]
 					player_count = window.count(player)
-					empty = window.count(0)
+					empty_count = window.count(0)
 					
 					if player_count == 4:
 						fours += 1
-					elif player_count == 3 and empty == 1:
-						if window[0] == 0 or window[-1] == 0:  # Open-ended
-							open_threes += 1
-						else:  # Closed
-							closed_threes += 1
-					elif player_count == 2 and empty == 2:
-						open_twos += 1
-
-			# Repeat for vertical/diagonal checks
-			# ... (similar logic for other directions)
-			# Vertical
-			for c in range(7):  # 7 columns
-				for r in range(3):  # Only need to check the bottom 3 rows for a vertical window of 4
-					window = list(board[r:r+4, c])
-					player_count = window.count(player)
-					empty = window.count(0)
-
-					if player_count == 4:
-						fours += 1
-					elif player_count == 3 and empty == 1:
-						# All vertical threes are open-ended since we're considering vertical alignment
-						open_threes += 1
-					elif player_count == 2 and empty == 2:
-						open_twos += 1
-      
-
-						# Diagonal checks
-			# Positive slope diagonals (bottom left to top right)
-			for r in range(3, 6):  # Start from the third row from the bottom to the top
-				for c in range(4):  # The first four columns
-					window = [board[r-i][c+i] for i in range(4)]
-					player_count = window.count(player)
-					empty = window.count(0)
-
-					if player_count == 4:
-						fours += 1
-					elif player_count == 3 and empty == 1:
+					elif player_count == 3 and empty_count == 1:
+						# Check for potential four
+						for (row, col) in cells:
+							if board[row][col] == 0 and next_available_rows[col] == row:
+								potential_fours += 1
+								break
+						# Open/closed check
 						if window[0] == 0 or window[-1] == 0:
 							open_threes += 1
 						else:
 							closed_threes += 1
-					elif player_count == 2 and empty == 2:
+					elif player_count == 2 and empty_count == 2:
 						open_twos += 1
-				# Negative slope diagonals (top left to bottom right)
-				for r in range(3):  # Start from the top row to the third row from the top
-					for c in range(4):  # The first four columns
-						window = [board[r+i][c+i] for i in range(4)]
-						player_count = window.count(player)
-						empty = window.count(0)
 
-						if player_count == 4:
-							fours += 1
-						elif player_count == 3 and empty == 1:
-							if window[0] == 0 or window[-1] == 0:
-								open_threes += 1
-							else:
-								closed_threes += 1
-						elif player_count == 2 and empty == 2:
-							open_twos += 1
+			# Vertical
+			for c in range(7):
+				for r in range(3):
+					cells = [(r + i, c) for i in range(4)]
+					window = [board[row][col] for (row, col) in cells]
+					player_count = window.count(player)
+					empty_count = window.count(0)
+					
+					if player_count == 4:
+						fours += 1
+					elif player_count == 3 and empty_count == 1:
+						for (row, col) in cells:
+							if board[row][col] == 0 and next_available_rows[col] == row:
+								potential_fours += 1
+								break
+						# Vertical open threes (only possible if top is open)
+						if r == 0 or board[r-1][c] == 0:  # Simplified check
+							open_threes += 1
+					elif player_count == 2 and empty_count == 2:
+						open_twos += 1
 
+			# Positive slope diagonal
+			for r in range(3, 6):
+				for c in range(4):
+					cells = [(r - i, c + i) for i in range(4)]
+					window = [board[row][col] for (row, col) in cells]
+					player_count = window.count(player)
+					empty_count = window.count(0)
+					
+					if player_count == 4:
+						fours += 1
+					elif player_count == 3 and empty_count == 1:
+						for (row, col) in cells:
+							if board[row][col] == 0 and next_available_rows[col] == row:
+								potential_fours += 1
+								break
+						if window[0] == 0 or window[-1] == 0:
+							open_threes += 1
+						else:
+							closed_threes += 1
+					elif player_count == 2 and empty_count == 2:
+						open_twos += 1
+
+			# Negative slope diagonal
+			for r in range(3):
+				for c in range(4):
+					cells = [(r + i, c + i) for i in range(4)]
+					window = [board[row][col] for (row, col) in cells]
+					player_count = window.count(player)
+					empty_count = window.count(0)
+					
+					if player_count == 4:
+						fours += 1
+					elif player_count == 3 and empty_count == 1:
+						for (row, col) in cells:
+							if board[row][col] == 0 and next_available_rows[col] == row:
+								potential_fours += 1
+								break
+						if window[0] == 0 or window[-1] == 0:
+							open_threes += 1
+						else:
+							closed_threes += 1
+					elif player_count == 2 and empty_count == 2:
+						open_twos += 1
 
 			return {
 				'fours': fours,
 				'open_threes': open_threes,
 				'closed_threes': closed_threes,
-				'open_twos': open_twos
+				'open_twos': open_twos,
+				'potential_fours': potential_fours
 			}
 
 		my_stats = count_sequences(self.position)
 		opp_stats = count_sequences(self.opponent_position)
 		
-		# Strategic weighting
+		# Strategic weighting with threat prioritization
 		utility = (
-			(my_stats['fours'] * 10000) +  # Immediate win gets highest priority
-			(my_stats['open_threes'] * 100) +  # Open 3s are critical
-			(my_stats['closed_threes'] * 10) +  # Blocked 3s less valuable
+			(my_stats['fours'] * 10000) + 
+			(my_stats['potential_fours'] * 5000) +  # High value for immediate win
+			(my_stats['open_threes'] * 150) +       # Increased priority
+			(my_stats['closed_threes'] * 10) +
 			(my_stats['open_twos'] * 2) -
 			(opp_stats['fours'] * 10000) -
-			(opp_stats['open_threes'] * 150) +  # Opponent open 3s more dangerous
+			(opp_stats['potential_fours'] * 5000) -  # Block opponent's immediate win
+			(opp_stats['open_threes'] * 200) +       # More dangerous opponent threats
 			(opp_stats['closed_threes'] * 15) -
-			(opp_stats['open_twos'] * 3)
-		)
+			(opp_stats['open_twos'] * 3))
 		
 		# Add center control bonus
 		center_columns = [2, 3, 4]
@@ -313,7 +341,6 @@ class alphaBetaAI(connect4Player):
 		return utility + center_bonus * 3
 
 	def get_valid_moves_ordered(self, board):
-		'''Return moves sorted by center priority'''
 		valid = [c for c in self.center_order if board[0][c] == 0]
 		return valid
 
@@ -322,8 +349,8 @@ class alphaBetaAI(connect4Player):
 		if depth == 0 or terminal:
 			return (None, value)
 
-		valid_moves = self.get_valid_moves_ordered(board)  # Use sorted moves
-		best_col = valid_moves[0]  # Default to first valid center move
+		valid_moves = self.get_valid_moves_ordered(board)
+		best_col = valid_moves[0]
 
 		if maximizing_player:
 			max_val = -float('inf')
@@ -331,15 +358,13 @@ class alphaBetaAI(connect4Player):
 				row = next(r for r in range(5, -1, -1) if board[r][col] == 0)
 				b_copy = np.copy(board)
 				b_copy[row][col] = self.position
-				
 				current_val = self.alphabeta(b_copy, depth-1, alpha, beta, False)[1]
-				
 				if current_val > max_val:
 					max_val = current_val
 					best_col = col
 				alpha = max(alpha, max_val)
 				if alpha >= beta:
-					break  # Prune remaining branches
+					break
 			return best_col, max_val
 		else:
 			min_val = float('inf')
@@ -347,17 +372,14 @@ class alphaBetaAI(connect4Player):
 				row = next(r for r in range(5, -1, -1) if board[r][col] == 0)
 				b_copy = np.copy(board)
 				b_copy[row][col] = self.opponent_position
-				
 				current_val = self.alphabeta(b_copy, depth-1, alpha, beta, True)[1]
-				
 				if current_val < min_val:
 					min_val = current_val
 					best_col = col
 				beta = min(beta, min_val)
 				if alpha >= beta:
-					break  # Prune remaining branches
+					break
 			return best_col, min_val
-
 	def is_terminal(self, board):
 		# Fast win check using bitwise operations
 		for player in [self.position, self.opponent_position]:
@@ -387,6 +409,8 @@ class alphaBetaAI(connect4Player):
 		board = np.array(env.getBoard())
 		best_move, _ = self.alphabeta(board, self.depth, -float('inf'), float('inf'), True)
 		move_dict['move'] = best_move
+
+    # Keep existing is_terminal and play methods
 # Defining Constants
 SQUARESIZE = 100
 BLUE = (0,0,255)
