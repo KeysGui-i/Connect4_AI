@@ -202,7 +202,7 @@ class TranspositionTable:
 		LOWER = 1
 		UPPER = 2
 
-	def __init__(self, size=1048583):  # Use a large prime number
+	def __init__(self, size=16):  # Use a large prime number
 		self.size = size
 		self.table = [None] * size
 
@@ -218,10 +218,10 @@ class TranspositionTable:
 		return None
 
 class alphaBetaAI(connect4Player):
-	def __init__(self, position, seed, depth=4):  # Increased depth
+	def __init__(self, position, seed, depth=5):  # Increased depth
 		super().__init__(position, seed)
 		self.initial_depth = depth
-		self.time_limit = 1.99  # 2s with safety margin
+		self.time_limit = 2.99  # 2s with safety margin
 		#	self.cvd_mode = cvd_mode
 		self.opponent_position = 2 if position == 1 else 1
 		self.center_order = [3, 2, 4, 1, 5, 0, 6]  # Center-first move order
@@ -468,9 +468,7 @@ class alphaBetaAI(connect4Player):
 		except TimeoutError:
 			valid = self.get_valid_moves_ordered(board)
 			best_move = valid[0] if valid else 3
-		move_dict['move'] = best_move
-
-    # Keep existing is_terminal and play methods
+		move_dict['move'] = best_move    # Keep existing is_terminal and play methods
 # Defining Constants
 SQUARESIZE = 100
 BLUE = (0,0,255)
@@ -493,7 +491,6 @@ size = (width, height)
 RADIUS = int(SQUARESIZE/2 - 5)
 
 screen = pygame.display.set_mode(size)
-
 
 
 
