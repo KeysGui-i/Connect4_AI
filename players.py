@@ -196,279 +196,99 @@ class minimaxAI(connect4Player):
 		best_move, _ = self.minimax(board, self.depth, True)
 		move_dict['move'] = best_move
 	
-class TranspositionTable:
-	class EntryType:
-		EXACT = 0
-		LOWER = 1
-		UPPER = 2
-
-	def __init__(self, size=16):  # Use a large prime number
-		self.size = size
-		self.table = [None] * size
-
-	def put(self, key, score, flag, depth):
-		index = key % self.size
-		self.table[index] = (key, score, flag, depth)
-
-	def get(self, key):
-		index = key % self.size
-		entry = self.table[index]
-		if entry and entry[0] == key:
-			return entry
-		return None
-
 class alphaBetaAI(connect4Player):
-	def __init__(self, position, seed, depth=5):  # Increased depth
+	def __init__(self, position, seed, cvd_mode,  depth=8):
 		super().__init__(position, seed)
 		self.initial_depth = depth
-		self.time_limit = 2.99  # 2s with safety margin
-		#	self.cvd_mode = cvd_mode
+		self.cvd_mode = cvd_mode
+		self.time_limit = 2.99  # 2.99s safety margin
 		self.opponent_position = 2 if position == 1 else 1
-		self.center_order = [3, 2, 4, 1, 5, 0, 6]  # Center-first move order
-		self.trans_table = TranspositionTable()
-		self.total_moves = 6 * 7
-	
-	def board_to_key(self, board):
-		# Convert board to hashable key (simple version)
-		return hash(tuple(map(tuple, board)))
+		self.center_order = [3, 2, 4, 1, 5, 0, 6]  # Critical move ordering
 
-	'''
-	def evaluate(self, board):
-		
-		# Precompute next available rows for all columns
-		next_available_rows = {}
-		for c in range(7):
-			next_row = -1
-			for r in range(5, -1, -1):
-				if board[r][c] == 0:
-					next_row = r
-					break
-			next_available_rows[c] = next_row
-		
-		def count_sequences(player):
-			consecutive_open_twos = 0
-			potential_fours = 0
-			open_threes = 0
-			fours = 0
-
-			# Horizontal checks
-			for r in range(6):
-				row = board[r]
-				for c in range(4):
-					# Check consecutive two patterns
-					if row[c] == row[c+1] == player and row[c+2] == 0 and row[c+3] == 0:
-						consecutive_open_twos += 1
-					# Check for three-with-gap patterns (xx_x)
-					if (row[c] == row[c+1] == row[c+3] == player and row[c+2] == 0) or \
-					(row[c] == row[c+2] == row[c+3] == player and row[c+1] == 0):
-						potential_fours += 1
-
-			# Vertical checks
-			for c in range(7):
-				col = board[:,c]
-				for r in range(3):
-					if col[r] == col[r+1] == player and col[r+2] == 0 and col[r+3] == 0:
-						consecutive_open_twos += 1
-
-			# Diagonal checks (both directions)
-			for r in range(3):
-				for c in range(4):
-					# Negative slope
-					if board[r][c] == board[r+1][c+1] == player and board[r+2][c+2] == 0 and board[r+3][c+3] == 0:
-						consecutive_open_twos += 1
-					# Positive slope
-					if board[r+3][c] == board[r+2][c+1] == player and board[r+1][c+2] == 0 and board[r][c+3] == 0:
-						consecutive_open_twos += 1
-			
-			
-
-			return {
-				'consecutive_open_twos': consecutive_open_twos,
-				'potential_fours': potential_fours,
-				'open_threes': open_threes,
-				'fours': fours
-			}
-
-		my_stats = count_sequences(self.position)
-		opp_stats = count_sequences(self.opponent_position)
-		
-		# Strategic weighting with threat prioritization
-		utility = (
-			(my_stats['fours'] * 10000) +
-			(my_stats['potential_fours'] * 5000) +
-			(my_stats['open_threes'] * 200) +
-			(my_stats['consecutive_open_twos'] * 50) -  # Increased weight
-			(opp_stats['fours'] * 10000) -
-			(opp_stats['potential_fours'] * 6000) -     # Higher penalty
-			(opp_stats['open_threes'] * 300) -
-			(opp_stats['consecutive_open_twos'] * 100)  # Heavy penalty for opponent's threats
-		)
-		
-		# Add center control
-		center_value = sum(board[r][c] == self.position 
-						for c in [2,3,4] for r in range(6))
-		return utility + center_value * 3
-'''
-	def get_valid_moves_ordered(self, board, critical_col=None):
-		"""Prioritize critical blocking moves first"""
-		valid = [c for c in self.center_order if board[0][c] == 0]
-		if critical_col is not None and critical_col in valid:
-			valid.remove(critical_col)
-			return [critical_col] + valid
-		return valid
+	def play(self, env, move_dict):
+		board = np.array(env.getBoard())
+		best_move = self.iterative_deepening_search(board)
+		move_dict['move'] = best_move
 
 	def iterative_deepening_search(self, board):
 		self.start_time = time.time()
 		best_move = 3  # Default to center
-		depth = 1
-		
-		while depth <= self.initial_depth:
+		for depth in range(1, self.initial_depth + 1):
+			if time.time() - self.start_time > 2.5:  # Leave 0.5s buffer
+				break
 			try:
-				move, _ = self.alphabeta(board, depth, -float('inf'), float('inf'), True)
+				move, _ = self.alphabeta(board, depth, -math.inf, math.inf, True)
 				best_move = move
-				depth += 1
 			except TimeoutError:
 				break
 		return best_move
-	def check_win(self, board, player):
-		# Horizontal
-		for r in range(6):
-			for c in range(4):
-				if all(board[r][c+i] == player for i in range(4)):
-					return True
-		# Vertical
-		for c in range(7):
-			for r in range(3):
-				if all(board[r+i][c] == player for i in range(4)):
-					return True
-		# Diagonals
-		for r in range(3):
-			for c in range(4):
-				if all(board[r+i][c+i] == player for i in range(4)):
-					return True
-				if all(board[r+3-i][c+i] == player for i in range(4)):
-					return True
-		return False
 
 	def alphabeta(self, board, depth, alpha, beta, maximizing_player):
 		if time.time() - self.start_time > self.time_limit:
 			raise TimeoutError()
-		
-		original_alpha = alpha
-		key = self.board_to_key(board)
-		entry = self.trans_table.get(key)
 
-		if entry:
-			entry_key, entry_score, entry_flag, entry_depth = entry
-			if entry_depth >= depth:
-				if entry_flag == TranspositionTable.EntryType.EXACT:
-					return (None, entry_score)
-				elif entry_flag == TranspositionTable.EntryType.LOWER:
-					alpha = max(alpha, entry_score)
-				elif entry_flag == TranspositionTable.EntryType.UPPER:
-					beta = min(beta, entry_score)
-				
-				if alpha >= beta:
-					return (None, entry_score)
+		# Fast terminal check
+		terminal, score = self.is_terminal(board)
+		if terminal or depth == 0:
+			return (None, score)
 
-		terminal, value = self.is_terminal(board)
-		if depth == 0 or terminal:
-			return (None, value)
+		# Prioritize center columns first
+		valid_moves = [c for c in self.center_order if board[0][c] == 0]
 
-		critical_col = self.find_urgent_block(board)
-		valid_moves = self.get_valid_moves_ordered(board, critical_col)
 		best_col = valid_moves[0] if valid_moves else None
+		best_val = -math.inf if maximizing_player else math.inf
 
-		if maximizing_player:
-			max_val = -float('inf')
-			for col in valid_moves:
-				row = next(r for r in range(5, -1, -1) if board[r][col] == 0)
-				b_copy = np.copy(board)
-				b_copy[row][col] = self.position
-				current_val = self.alphabeta(b_copy, depth-1, alpha, beta, False)[1]
-				
-				if current_val > max_val:
-					max_val = current_val
+		for col in valid_moves:
+			row = next(r for r in range(5, -1, -1) if board[r][col] == 0)
+			b_copy = np.copy(board)
+			b_copy[row][col] = self.position if maximizing_player else self.opponent_position
+
+			# Recursive search
+			current_val = self.alphabeta(b_copy, depth-1, alpha, beta, not maximizing_player)[1]
+
+			if maximizing_player:
+				if current_val > best_val:
+					best_val = current_val
 					best_col = col
-				alpha = max(alpha, max_val)
-				if alpha >= beta:
-					break
-			
-			# Store in transposition table
-			if max_val <= original_alpha:
-				flag = TranspositionTable.EntryType.UPPER
-			elif max_val >= beta:
-				flag = TranspositionTable.EntryType.LOWER
+				alpha = max(alpha, best_val)
 			else:
-				flag = TranspositionTable.EntryType.EXACT
-			self.trans_table.put(key, max_val, flag, depth)
-			
-			return (best_col, max_val)  # Fixed variable name here
-		else:
-			min_val = float('inf')
-			for col in valid_moves:
-				row = next(r for r in range(5, -1, -1) if board[r][col] == 0)
-				b_copy = np.copy(board)
-				b_copy[row][col] = self.opponent_position
-				current_val = self.alphabeta(b_copy, depth-1, alpha, beta, True)[1]
-				
-				if current_val < min_val:
-					min_val = current_val
+				if current_val < best_val:
+					best_val = current_val
 					best_col = col
-				beta = min(beta, min_val)
-				if alpha >= beta:
-					break
-			
-			# Store in transposition table
-			if min_val <= original_alpha:
-				flag = TranspositionTable.EntryType.UPPER
-			elif min_val >= beta:
-				flag = TranspositionTable.EntryType.LOWER
-			else:
-				flag = TranspositionTable.EntryType.EXACT
-			self.trans_table.put(key, min_val, flag, depth)
-			
-			return (best_col, min_val)  # Fixed variable name here
+				beta = min(beta, best_val)
+
+			if alpha >= beta:
+				break  # Prune
+
+		return (best_col, best_val)
 
 	def is_terminal(self, board):
-		"""Modified C++-style terminal check with exact scores"""
-		# Check win for either player
-		for player in [self.position, self.opponent_position]:
-			if self.check_win(board, player):
-				score = (self.total_moves + 1 - self.nb_moves(board)) // 2
-				return (True, score if player == self.position else -score)
-		
-		# Check draw
-		if np.all(board != 0):
-			return (True, 0)
-		
-		return (False, 0)
+		"""Ultra-fast terminal check optimized for speed"""
+		# Check horizontal
+		for r in range(6):
+			for c in range(4):
+				if board[r][c] == board[r][c+1] == board[r][c+2] == board[r][c+3] != 0:
+					return (True, 10000 if board[r][c] == self.position else -10000)
 
-	def nb_moves(self, board):
-		"""Count played moves (equivalent to C++ P.nbMoves())"""
-		return np.count_nonzero(board)
-	
-	def find_urgent_block(self, board):
-		"""Quick check for immediate opponent threats needing block"""
-		for c in self.center_order:
-			if board[0][c] != 0:
-				continue
-			# Simulate opponent move
-			row = next(r for r in range(5, -1, -1) if board[r][c] == 0)
-			temp_board = np.copy(board)
-			temp_board[row][c] = self.opponent_position
-			if self.is_terminal(temp_board)[0]:
-				return c
-		return None
-    
-	def play(self, env, move_dict):
-		board = np.array(env.getBoard())
-		try:
-			best_move = self.iterative_deepening_search(board)
-		except TimeoutError:
-			valid = self.get_valid_moves_ordered(board)
-			best_move = valid[0] if valid else 3
-		move_dict['move'] = best_move    # Keep existing is_terminal and play methods
+		# Check vertical
+		for c in range(7):
+			for r in range(3):
+				if board[r][c] == board[r+1][c] == board[r+2][c] == board[r+3][c] != 0:
+					return (True, 10000 if board[r][c] == self.position else -10000)
+
+		# Check diagonals
+		for r in range(3):
+			for c in range(4):
+				if board[r][c] == board[r+1][c+1] == board[r+2][c+2] == board[r+3][c+3] != 0:
+					return (True, 10000 if board[r][c] == self.position else -10000)
+				if board[r+3][c] == board[r+2][c+1] == board[r+1][c+2] == board[r][c+3] != 0:
+					return (True, 10000 if board[r+3][c] == self.position else -10000)
+
+		# Check draw
+		if np.all(board[0] != 0):
+			return (True, 0)
+
+		return (False, 0)
 # Defining Constants
 SQUARESIZE = 100
 BLUE = (0,0,255)
